@@ -36,12 +36,16 @@ def download_url(url, root, filename=None, md5=None):
         try:
             print('Downloading ' + url + ' to ' + fpath)
             urllib.request.urlretrieve(url, fpath)
-        except:
+        except Exception as e:
+            print(f"Download failed: {e}")
             if url[:5] == 'https':
                 url = url.replace('https:', 'http:')
-                print('Failed download. Trying https -> http instead.'
-                      ' Downloading ' + url + ' to ' + fpath)
-                urllib.request.urlretrieve(url, fpath)
+                print('Trying https -> http instead.')
+                try:
+                    urllib.request.urlretrieve(url, fpath)
+                except Exception as e:
+                    print(f"Second download attempt failed: {e}")
+                    raise
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -148,14 +152,15 @@ class CIFAR10(VisionDataset):
         self.transform_list = transform_list
         self.train = train  # training set or test set
 
+        # 修改：允许下载数据集
         if download:
-            raise ValueError('cannot download.')
-            exit()
-            #self.download()
+            if not self._check_integrity():
+                print(f"Downloading CIFAR10 dataset to {self.root}...")
+                self.download()
 
-        #if not self._check_integrity():
-        #    raise RuntimeError('Dataset not found or corrupted.' +
-        #                       ' You can use download=True to download it')
+        if not self._check_integrity():
+            raise RuntimeError('Dataset not found or corrupted.' +
+                               ' You can use download=True to download it')
 
         if self.train:
             downloaded_list = self.train_list
@@ -186,9 +191,9 @@ class CIFAR10(VisionDataset):
 
     def _load_meta(self):
         path = os.path.join(self.root, self.base_folder, self.meta['filename'])
-        #if not check_integrity(path, self.meta['md5']):
-        #    raise RuntimeError('Dataset metadata file not found or corrupted.' +
-        #                       ' You can use download=True to download it')
+        if not check_integrity(path, self.meta['md5']):
+            raise RuntimeError('Dataset metadata file not found or corrupted.' +
+                               ' You can use download=True to download it')
         with open(path, 'rb') as infile:
             if sys.version_info[0] == 2:
                 data = pickle.load(infile)
@@ -264,9 +269,20 @@ class CIFAR100(CIFAR10):
         'md5': '7973b15100ade9c7d40fb424638fde48',
     }
 
+    def __init__(self, root, train=True,
+                 transform=None, transform_list=None, download=False):
+        # 调用父类构造函数
+        super(CIFAR100, self).__init__(root, train=train,
+                                       transform=transform,
+                                       transform_list=transform_list,
+                                       download=download)
+
 
 def get_dataloader(args):
-
+    # 打印路径信息，用于调试
+    print(f"Data root: {args.root}")
+    print(f"Expected train file: {os.path.join(args.root, 'cifar-100-python', 'train')}")
+    
     train_transforms = []
     for i in range(len(args.model_names)):
         set_seed(i)
@@ -278,7 +294,8 @@ def get_dataloader(args):
         ])
         train_transforms.append(train_transform)
 
-    trainset = CIFAR100(root=args.root, train=True, transform_list=train_transforms, download=False)
+    # 启用下载功能
+    trainset = CIFAR100(root=args.root, train=True, transform_list=train_transforms, download=True)
     train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True,
                               num_workers=args.num_workers)
 
@@ -287,7 +304,8 @@ def get_dataloader(args):
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ])
 
-    valset = CIFAR100(root=args.root, train=False, transform=test_transform, download=False)
+    # 启用下载功能
+    valset = CIFAR100(root=args.root, train=False, transform=test_transform, download=True)
     val_loader = DataLoader(valset, batch_size=args.batch_size, shuffle=False,
                             num_workers=args.num_workers)
     return train_loader, val_loader
@@ -297,7 +315,7 @@ if __name__ == '__main__':
     import argparse
     import cv2
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root', type=str, default='dataset')
+    parser.add_argument('--root', type=str, default='./dataset/cifar100')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--model_names', type=str, nargs='+', default=['resnet56', 'resnet32'])
