@@ -7,12 +7,41 @@ import os
 import os.path
 import numpy as np
 import sys
-
 import pickle
 import torch
 import torch.utils.data as data
-
 from itertools import permutations
+
+# 新增：定义辅助函数
+def check_integrity(fpath, md5=None):
+    if not os.path.isfile(fpath):
+        return False
+    return True
+
+def download_url(url, root, filename=None, md5=None):
+    import urllib
+    import hashlib
+    
+    if not os.path.exists(root):
+        os.makedirs(root)
+    
+    if not filename:
+        filename = os.path.basename(url)
+    
+    fpath = os.path.join(root, filename)
+    
+    if os.path.isfile(fpath) and check_integrity(fpath, md5):
+        print('Using downloaded and verified file: ' + fpath)
+    else:
+        try:
+            print('Downloading ' + url + ' to ' + fpath)
+            urllib.request.urlretrieve(url, fpath)
+        except:
+            if url[:5] == 'https':
+                url = url.replace('https:', 'http:')
+                print('Failed download. Trying https -> http instead.'
+                      ' Downloading ' + url + ' to ' + fpath)
+                urllib.request.urlretrieve(url, fpath)
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -22,7 +51,8 @@ class VisionDataset(data.Dataset):
     _repr_indent = 4
 
     def __init__(self, root, transforms=None, transform=None, target_transform=None):
-        if isinstance(root, torch._six.string_classes):
+        # 修复：替换 torch._six.string_classes 为 str
+        if isinstance(root, str):
             root = os.path.expanduser(root)
         self.root = root
 
@@ -64,6 +94,29 @@ class VisionDataset(data.Dataset):
 
     def extra_repr(self):
         return ""
+
+class StandardTransform:
+    def __init__(self, transform=None, target_transform=None):
+        self.transform = transform
+        self.target_transform = target_transform
+
+    def __call__(self, input, target):
+        if self.transform is not None:
+            input = self.transform(input)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return input, target
+
+    def __repr__(self):
+        body = [self.__class__.__name__]
+        if self.transform is not None:
+            body += self._format_transform_repr(self.transform,
+                                                 "Transform: ")
+        if self.target_transform is not None:
+            body += self._format_transform_repr(self.target_transform,
+                                                 "Target transform: ")
+
+        return '\n'.join(body)
 
 class CIFAR10(VisionDataset):
     base_folder = 'cifar-10-batches-py'
